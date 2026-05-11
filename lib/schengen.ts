@@ -82,6 +82,35 @@ export function countSchengenDays(segments: Segment[], checkDate: string): numbe
 }
 
 /**
+ * Return the highest Schengen day count reached in any 180-day window
+ * across the full trip — the number shown in the sidebar counter.
+ */
+export function getPeakSchengenDays(segments: Segment[]): number {
+  if (segments.length === 0) return 0
+  if (!segments.some(s => SCHENGEN_CODES.has(s.country_code))) return 0
+
+  const tripStart = segments.reduce(
+    (min, s) => (s.arrival_date < min ? s.arrival_date : min),
+    segments[0].arrival_date
+  )
+  const tripEnd = segments.reduce(
+    (max, s) => (s.departure_date > max ? s.departure_date : max),
+    segments[0].departure_date
+  )
+
+  const start = parseDate(tripStart)
+  const totalDays = daysBetween(start, parseDate(tripEnd))
+  let peak = 0
+
+  for (let i = 0; i <= totalDays; i++) {
+    const count = countSchengenDays(segments, toDateStr(addDays(start, i)))
+    if (count > peak) peak = count
+  }
+
+  return peak
+}
+
+/**
  * Return the first date (YYYY-MM-DD) where the rolling 180-day Schengen
  * count exceeds 90, or null if the trip is fully compliant.
  */
