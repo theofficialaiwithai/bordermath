@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { useTripStore, DbSegment } from '@/store/trip-store'
 import { COUNTRIES } from '@/lib/countries'
 import { countSchengenDays, findFirstViolation, SCHENGEN_CODES } from '@/lib/schengen'
+import { TripTimeline } from '@/components/trip-timeline'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -250,6 +251,13 @@ export default function TripBuilderPage() {
           placeholder="Trip name"
         />
       </div>
+
+      {/* Timeline — full width above the two-column layout */}
+      {segments.length > 0 && (
+        <div className="mb-6">
+          <TripTimeline segments={segments} violation={violation} />
+        </div>
+      )}
 
       {/* Two-column layout */}
       <div className="flex flex-col lg:flex-row gap-6">
