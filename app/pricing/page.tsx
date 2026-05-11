@@ -8,7 +8,7 @@ const TIERS = [
   {
     name: 'Free',
     price: '$0',
-    period: '/month',
+    period: '/year',
     description: 'Start planning before you commit.',
     cta: 'Get started free',
     href: '/signup',
@@ -23,8 +23,8 @@ const TIERS = [
   },
   {
     name: 'Nomad',
-    price: '$15',
-    period: '/month',
+    price: '$180',
+    period: '/year',
     description: 'Everything a full-time nomad needs.',
     cta: 'Start 14-day free trial',
     href: '/signup',
@@ -40,8 +40,8 @@ const TIERS = [
   },
   {
     name: 'Pro',
-    price: '$50',
-    period: '/month',
+    price: '$600',
+    period: '/year',
     description: 'For serious travelers and multi-passport holders.',
     cta: 'Start 14-day free trial',
     href: '/signup',
@@ -275,9 +275,9 @@ export default function PricingPage() {
           {/* Callout copy */}
           <div className="mt-6 rounded-xl border border-[#2A2D3E] bg-[#1A1D27] px-6 py-5">
             <p className="text-[#E2E8F0] text-sm leading-relaxed">
-              One Schengen fine exceeds a full year of Nomad.{' '}
+              One Schengen fine can exceed a full Nomad annual plan.{' '}
               <span className="text-[#EF4444] font-medium">
-                The UAE daily rate exceeds Pro in 48 hours.
+                The UAE daily rate exceeds a full year of Pro in under two weeks.
               </span>
             </p>
           </div>
