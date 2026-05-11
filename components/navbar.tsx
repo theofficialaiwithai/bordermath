@@ -34,6 +34,12 @@ export default function Navbar() {
           Bordermath
         </Link>
         <div className="flex items-center gap-4">
+          <Link
+            href="/pricing"
+            className="text-sm text-[#94A3B8] hover:text-white transition-colors"
+          >
+            Pricing
+          </Link>
           {user ? (
             <>
               <Link
