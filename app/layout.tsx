@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Navbar from "@/components/navbar";
 
 export const metadata: Metadata = {
   title: "Bordermath",
-  description: "Bordermath",
+  description: "Plan the trip. Do the visa math.",
 };
 
 export default function RootLayout({
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="bg-[#0F1117] antialiased">{children}</body>
+      <body className="bg-[#0F1117] antialiased">
+        <Navbar />
+        {children}
+      </body>
     </html>
   );
 }
