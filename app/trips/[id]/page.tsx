@@ -55,7 +55,7 @@ export default function TripBuilderPage() {
   const router = useRouter()
   const tripId = params.id as string
 
-  const { trip, segments, load, reset, setTripName, addSegment, updateSegment, deleteSegment, setSegments } =
+  const { trip, segments, load, reset, setTripName, addSegment, updateSegment, setSegments } =
     useTripStore()
 
   const [pageStatus, setPageStatus] = useState<'loading' | 'ready'>('loading')
@@ -481,7 +481,7 @@ export default function TripBuilderPage() {
                 ⚠ Schengen violation on {violation}
               </p>
               <p className="text-[#E2E8F0] text-sm leading-relaxed">
-                You'll exceed your 90-day limit. Shorten a Schengen stay before this date.
+                You&apos;ll exceed your 90-day limit. Shorten a Schengen stay before this date.
               </p>
             </div>
           ) : (
