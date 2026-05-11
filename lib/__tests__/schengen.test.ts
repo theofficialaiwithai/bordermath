@@ -121,6 +121,30 @@ describe('findFirstViolation', () => {
     expect(findFirstViolation(segments)).not.toBeNull()
   })
 
+  test('Jan stay counts against June re-entry in the rolling window', () => {
+    // 60 days France Jan 1–Mar 1. Re-enter Spain Jun 1–Jun 30 (30 days).
+    // On Jun 30 the 180-day window starts exactly Jan 1 — the full Jan stay is still inside.
+    // countSchengenDays on Jun 30 = 60 (FR) + 30 (ES) = 90: at the limit, still compliant.
+    const segments: Segment[] = [
+      { country_code: 'FR', arrival_date: '2026-01-01', departure_date: '2026-03-01' }, // 60 days
+      { country_code: 'TH', arrival_date: '2026-03-02', departure_date: '2026-05-31' }, // break
+      { country_code: 'ES', arrival_date: '2026-06-01', departure_date: '2026-06-30' }, // 30 days
+    ]
+    expect(countSchengenDays(segments, '2026-06-30')).toBe(90) // Jan days still in window
+    expect(findFirstViolation(segments)).toBeNull()           // 90 is the limit, not a violation
+  })
+
+  test('61d Jan stay + 30d June re-entry causes violation (rolling window)', () => {
+    // 61 days France Jan 1–Mar 2. Re-enter Spain Jun 1–Jun 30 (30 days).
+    // On Jun 30: window starts Jan 1, FR = 61d + ES = 30d → 91d → violation.
+    const segments: Segment[] = [
+      { country_code: 'FR', arrival_date: '2026-01-01', departure_date: '2026-03-02' }, // 61 days
+      { country_code: 'TH', arrival_date: '2026-03-03', departure_date: '2026-05-31' }, // break
+      { country_code: 'ES', arrival_date: '2026-06-01', departure_date: '2026-06-30' }, // 30 days
+    ]
+    expect(findFirstViolation(segments)).toBe('2026-06-30')
+  })
+
   test('returns null for an empty segment list', () => {
     expect(findFirstViolation([])).toBeNull()
   })

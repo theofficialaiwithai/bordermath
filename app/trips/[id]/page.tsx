@@ -294,7 +294,8 @@ export default function TripBuilderPage() {
                   onDrop={() => handleDrop(index)}
                   onDragEnd={() => { setDragIndex(null); setDragOverIndex(null) }}
                   className={[
-                    'grid grid-cols-[20px_1fr_130px_130px_52px_32px] gap-3 items-center',
+                    'flex flex-col sm:grid sm:grid-cols-[20px_1fr_130px_130px_52px_32px]',
+                    'gap-y-2 sm:gap-y-0 sm:gap-x-3 sm:items-center',
                     'bg-[#1A1D27] rounded-lg px-3 py-2.5 transition-all duration-150',
                     'border border-[#2A2D3E]',
                     isSchengen ? 'border-l-2 border-l-[#00B4A6]' : 'border-l-2 border-l-[#F59E0B]',
@@ -302,71 +303,73 @@ export default function TripBuilderPage() {
                     isDragOver ? 'ring-1 ring-[#6366F1] scale-[1.005]' : '',
                   ].join(' ')}
                 >
-                  {/* Drag handle */}
-                  <span
-                    className="text-[#4A5568] cursor-grab active:cursor-grabbing select-none
-                               text-xs leading-none tracking-tighter"
-                  >
-                    ⠿
-                  </span>
+                  {/* Row 1: handle + country + delete (mobile) */}
+                  <div className="flex items-center gap-3 sm:contents">
+                    <span className="text-[#4A5568] cursor-grab active:cursor-grabbing select-none
+                                     text-xs leading-none tracking-tighter shrink-0">
+                      ⠿
+                    </span>
+                    <select
+                      value={seg.country_code}
+                      onChange={(e) => {
+                        const c = COUNTRIES.find((x) => x.code === e.target.value)!
+                        handleSegmentChange(seg.id, {
+                          country_code: e.target.value,
+                          country_name: c.name,
+                        })
+                      }}
+                      className="flex-1 sm:flex-none bg-transparent text-white text-sm
+                                 focus:outline-none cursor-pointer truncate"
+                    >
+                      {COUNTRIES.map((c) => (
+                        <option key={c.code} value={c.code} className="bg-[#1A1D27]">
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handleDeleteSegment(seg.id)}
+                      className="sm:hidden text-[#4A5568] hover:text-[#EF4444] transition-colors
+                                 text-base leading-none shrink-0"
+                      aria-label="Delete segment"
+                    >
+                      ✕
+                    </button>
+                  </div>
 
-                  {/* Country */}
-                  <select
-                    value={seg.country_code}
-                    onChange={(e) => {
-                      const c = COUNTRIES.find((x) => x.code === e.target.value)!
-                      handleSegmentChange(seg.id, {
-                        country_code: e.target.value,
-                        country_name: c.name,
-                      })
-                    }}
-                    className="bg-transparent text-white text-sm focus:outline-none cursor-pointer
-                               truncate"
-                  >
-                    {COUNTRIES.map((c) => (
-                      <option key={c.code} value={c.code} className="bg-[#1A1D27]">
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Arrival */}
-                  <input
-                    type="date"
-                    value={seg.arrival_date}
-                    onChange={(e) => handleSegmentChange(seg.id, { arrival_date: e.target.value })}
-                    className="bg-transparent text-white text-sm focus:outline-none w-full
-                               [color-scheme:dark]"
-                  />
-
-                  {/* Departure */}
-                  <input
-                    type="date"
-                    value={seg.departure_date}
-                    min={seg.arrival_date}
-                    onChange={(e) =>
-                      handleSegmentChange(seg.id, { departure_date: e.target.value })
-                    }
-                    className="bg-transparent text-white text-sm focus:outline-none w-full
-                               [color-scheme:dark]"
-                  />
-
-                  {/* Duration */}
-                  <span className="text-[#94A3B8] text-sm text-right font-mono">
-                    {seg.arrival_date && seg.departure_date
-                      ? `${stayDays(seg.arrival_date, seg.departure_date)}d`
-                      : '—'}
-                  </span>
-
-                  {/* Delete */}
-                  <button
-                    onClick={() => handleDeleteSegment(seg.id)}
-                    className="text-[#4A5568] hover:text-[#EF4444] transition-colors text-base
-                               leading-none"
-                    aria-label="Delete segment"
-                  >
-                    ✕
-                  </button>
+                  {/* Row 2: dates + duration + delete (desktop) */}
+                  <div className="flex items-center gap-2 pl-7 sm:pl-0 sm:contents">
+                    <input
+                      type="date"
+                      value={seg.arrival_date}
+                      onChange={(e) => handleSegmentChange(seg.id, { arrival_date: e.target.value })}
+                      className="flex-1 sm:flex-none bg-transparent text-white text-sm
+                                 focus:outline-none w-full [color-scheme:dark]"
+                    />
+                    <input
+                      type="date"
+                      value={seg.departure_date}
+                      min={seg.arrival_date}
+                      onChange={(e) =>
+                        handleSegmentChange(seg.id, { departure_date: e.target.value })
+                      }
+                      className="flex-1 sm:flex-none bg-transparent text-white text-sm
+                                 focus:outline-none w-full [color-scheme:dark]"
+                    />
+                    <span className="text-[#94A3B8] text-sm text-right font-mono shrink-0">
+                      {seg.arrival_date && seg.departure_date
+                        ? `${stayDays(seg.arrival_date, seg.departure_date)}d`
+                        : '—'}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteSegment(seg.id)}
+                      className="hidden sm:block text-[#4A5568] hover:text-[#EF4444]
+                                 transition-colors text-base leading-none"
+                      aria-label="Delete segment"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
               )
             })}
