@@ -345,14 +345,13 @@ export default function TripBuilderPage() {
             <div
               className="hidden sm:grid gap-3 px-3 mb-1.5
                           text-[11px] text-[#94A3B8] uppercase tracking-widest"
-              style={{ gridTemplateColumns: '20px 1fr 130px 130px 52px 28px 32px' }}
+              style={{ gridTemplateColumns: '20px 1fr 130px 130px 52px 32px' }}
             >
               <div />
               <div>Country</div>
               <div>Arrival</div>
               <div>Departure</div>
               <div className="text-right">Days</div>
-              <div />
               <div />
             </div>
           )}
@@ -391,7 +390,7 @@ export default function TripBuilderPage() {
                     isDragging ? 'opacity-40' : 'opacity-100',
                     isDragOver ? 'ring-1 ring-[#6366F1] scale-[1.005]' : '',
                   ].join(' ')}
-                  style={{ gridTemplateColumns: '20px 1fr 130px 130px 52px 28px 32px' }}
+                  style={{ gridTemplateColumns: '20px 1fr 130px 130px 52px 32px' }}
                 >
                   {/* Row 1: handle + country + [arrive btn on mobile] + delete */}
                   <div className="flex items-center gap-3 sm:contents">
@@ -418,20 +417,6 @@ export default function TripBuilderPage() {
                       ))}
                     </select>
 
-                    {/* Arrive button — mobile only */}
-                    <button
-                      onClick={() => handleMarkArrived(seg)}
-                      title={isActive ? 'Stop tracking' : 'Mark as current location'}
-                      className={[
-                        'sm:hidden text-sm leading-none shrink-0 transition-colors',
-                        isActive
-                          ? 'text-[#00B4A6]'
-                          : 'text-[#4A5568] hover:text-[#00B4A6]',
-                      ].join(' ')}
-                    >
-                      {isActive ? '●' : '✈'}
-                    </button>
-
                     <button
                       onClick={() => handleDeleteSegment(seg.id)}
                       className="sm:hidden text-[#4A5568] hover:text-[#EF4444] transition-colors
@@ -442,7 +427,7 @@ export default function TripBuilderPage() {
                     </button>
                   </div>
 
-                  {/* Row 2: dates + duration + arrive btn (desktop) + delete (desktop) */}
+                  {/* Row 2: dates + duration + delete (desktop) */}
                   <div className="flex items-center gap-2 pl-7 sm:pl-0 sm:contents">
                     <input
                       type="date"
@@ -467,20 +452,6 @@ export default function TripBuilderPage() {
                         : '—'}
                     </span>
 
-                    {/* Arrive button — desktop */}
-                    <button
-                      onClick={() => handleMarkArrived(seg)}
-                      title={isActive ? 'Stop tracking' : 'Mark as current location'}
-                      className={[
-                        'hidden sm:block text-sm leading-none transition-colors',
-                        isActive
-                          ? 'text-[#00B4A6]'
-                          : 'text-[#4A5568] hover:text-[#00B4A6]',
-                      ].join(' ')}
-                    >
-                      {isActive ? '●' : '✈'}
-                    </button>
-
                     <button
                       onClick={() => handleDeleteSegment(seg.id)}
                       className="hidden sm:block text-[#4A5568] hover:text-[#EF4444]
@@ -488,6 +459,21 @@ export default function TripBuilderPage() {
                       aria-label="Delete segment"
                     >
                       ✕
+                    </button>
+                  </div>
+
+                  {/* Row 3: "Mark as current location" labeled button — full width */}
+                  <div className="sm:col-span-full flex pt-1 sm:pt-2 sm:border-t sm:border-[#2A2D3E]">
+                    <button
+                      onClick={() => handleMarkArrived(seg)}
+                      className={[
+                        'text-xs font-semibold px-3 py-1.5 rounded-md transition-colors',
+                        isActive
+                          ? 'bg-[#00B4A6]/15 border border-[#00B4A6]/40 text-[#00B4A6] hover:bg-[#00B4A6]/25'
+                          : 'bg-[#6366F1] hover:bg-[#4F46E5] text-white',
+                      ].join(' ')}
+                    >
+                      {isActive ? 'Currently here ✓' : 'Mark as current location'}
                     </button>
                   </div>
                 </div>
@@ -572,12 +558,6 @@ export default function TripBuilderPage() {
             )}
           </div>
 
-          {/* Arrive-button legend */}
-          {segments.length > 0 && (
-            <p className="text-[#4A5568] text-xs mt-3 px-1">
-              ✈ = mark as current location &nbsp;·&nbsp; ● = currently tracking (tap to stop)
-            </p>
-          )}
         </div>
 
         {/* ── Right: Schengen sidebar ───────────────────────────────────────── */}
