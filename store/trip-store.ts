@@ -8,6 +8,8 @@ export interface DbSegment {
   arrival_date: string
   departure_date: string
   position: number
+  actual_arrival_date: string | null
+  is_active: boolean
 }
 
 export interface Trip {

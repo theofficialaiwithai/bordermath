@@ -91,7 +91,7 @@ export default function DashboardPage() {
 
       const { data: segsData } = await supabase
         .from('segments')
-        .select('id, trip_id, country_code, country_name, arrival_date, departure_date, position')
+        .select('id, trip_id, country_code, country_name, arrival_date, departure_date, position, actual_arrival_date, is_active')
         .in('trip_id', tripsData.map((t) => t.id))
 
       const byTrip = new Map<string, DbSegment[]>()

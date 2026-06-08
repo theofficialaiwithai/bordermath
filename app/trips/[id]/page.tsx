@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -8,10 +8,15 @@ import { useTripStore, DbSegment } from '@/store/trip-store'
 import { COUNTRIES } from '@/lib/countries'
 import { countSchengenDays, findFirstViolation, SCHENGEN_CODES } from '@/lib/schengen'
 import { TripTimeline } from '@/components/trip-timeline'
+import { CountdownCard } from '@/components/countdown-card'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function todayUTC(): string {
+  return new Date().toISOString().slice(0, 10)
+}
 
 function stayDays(arrival: string, departure: string): number {
   if (!arrival || !departure) return 0
@@ -60,6 +65,8 @@ export default function TripBuilderPage() {
     useTripStore()
 
   const [pageStatus, setPageStatus] = useState<'loading' | 'ready'>('loading')
+  const [passportCountry, setPassportCountry] = useState('US')
+  const [now, setNow] = useState(todayUTC)
 
   // Debounce timers
   const nameTimer = useRef<NodeJS.Timeout>()
@@ -75,7 +82,8 @@ export default function TripBuilderPage() {
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState('')
 
-  // Load trip on mount
+  // ── Load trip on mount ──────────────────────────────────────────────────
+
   useEffect(() => {
     reset()
     setPageStatus('loading')
@@ -84,12 +92,23 @@ export default function TripBuilderPage() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
-      const [{ data: tripData, error: tripErr }, { data: segData }] = await Promise.all([
+      const userId = session.user.id
+
+      const [
+        { data: tripData, error: tripErr },
+        { data: segData },
+        { data: userData },
+      ] = await Promise.all([
         supabase.from('trips').select('*').eq('id', tripId).single(),
         supabase.from('segments').select('*').eq('trip_id', tripId).order('position'),
+        supabase.from('users').select('passport_country').eq('id', userId).single(),
       ])
 
       if (tripErr || !tripData) { router.push('/dashboard'); return }
+
+      if (userData?.passport_country) {
+        setPassportCountry(userData.passport_country)
+      }
 
       load(tripData, segData ?? [])
       setPageStatus('ready')
@@ -97,6 +116,13 @@ export default function TripBuilderPage() {
 
     init()
   }, [tripId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Hourly tick to keep countdown current ─────────────────────────────
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(todayUTC()), 3_600_000)
+    return () => clearInterval(id)
+  }, [])
 
   // ---------------------------------------------------------------------------
   // Schengen stats (recomputed whenever segments change)
@@ -108,6 +134,9 @@ export default function TripBuilderPage() {
   const barPct = Math.min(100, (schengenDays / 90) * 100)
   const barColor =
     schengenDays >= 90 ? 'bg-[#EF4444]' : schengenDays >= 70 ? 'bg-[#F59E0B]' : 'bg-[#22C55E]'
+
+  // Active segment (the one currently being tracked live)
+  const activeSeg = useMemo(() => segments.find((s) => s.is_active) ?? null, [segments])
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -134,6 +163,40 @@ export default function TripBuilderPage() {
     )
   }
 
+  const handleMarkArrived = useCallback(
+    async (seg: DbSegment) => {
+      // If already active, deactivate (stop tracking)
+      if (seg.is_active) {
+        updateSegment(seg.id, { is_active: false })
+        await supabase.from('segments').update({ is_active: false }).eq('id', seg.id)
+        return
+      }
+
+      // Deactivate all other segments in local store first
+      segments.forEach((s) => {
+        if (s.is_active) updateSegment(s.id, { is_active: false })
+      })
+
+      // Activate this segment, set actual_arrival_date to today if not already set
+      const arrival = seg.actual_arrival_date ?? now
+      updateSegment(seg.id, { is_active: true, actual_arrival_date: arrival })
+
+      // Persist: deactivate others, activate this one
+      const deactivateOthers = segments
+        .filter((s) => s.is_active && s.id !== seg.id)
+        .map((s) => supabase.from('segments').update({ is_active: false }).eq('id', s.id))
+
+      await Promise.all([
+        ...deactivateOthers,
+        supabase
+          .from('segments')
+          .update({ is_active: true, actual_arrival_date: arrival })
+          .eq('id', seg.id),
+      ])
+    },
+    [segments, updateSegment, now]
+  )
+
   async function handleAddSegment() {
     setAddError('')
     if (!newSeg.arrival_date || !newSeg.departure_date) {
@@ -158,6 +221,8 @@ export default function TripBuilderPage() {
         arrival_date: newSeg.arrival_date,
         departure_date: newSeg.departure_date,
         position,
+        is_active: false,
+        actual_arrival_date: null,
       })
       .select()
       .single()
@@ -252,6 +317,16 @@ export default function TripBuilderPage() {
         />
       </div>
 
+      {/* ── Live countdown card ─────────────────────────────────────────────── */}
+      {activeSeg && (
+        <CountdownCard
+          seg={activeSeg}
+          allSegments={segments}
+          passportCountry={passportCountry}
+          now={now}
+        />
+      )}
+
       {/* Timeline — full width above the two-column layout */}
       {segments.length > 0 && (
         <div className="mb-6">
@@ -267,13 +342,17 @@ export default function TripBuilderPage() {
 
           {/* Column headers */}
           {segments.length > 0 && (
-            <div className="hidden sm:grid grid-cols-[20px_1fr_130px_130px_52px_32px] gap-3 px-3 mb-1.5
-                            text-[11px] text-[#94A3B8] uppercase tracking-widest">
+            <div
+              className="hidden sm:grid gap-3 px-3 mb-1.5
+                          text-[11px] text-[#94A3B8] uppercase tracking-widest"
+              style={{ gridTemplateColumns: '20px 1fr 130px 130px 52px 28px 32px' }}
+            >
               <div />
               <div>Country</div>
               <div>Arrival</div>
               <div>Departure</div>
               <div className="text-right">Days</div>
+              <div />
               <div />
             </div>
           )}
@@ -284,6 +363,17 @@ export default function TripBuilderPage() {
               const isSchengen = SCHENGEN_CODES.has(seg.country_code)
               const isDragging = dragIndex === index
               const isDragOver = dragOverIndex === index && dragIndex !== index
+              const isActive = seg.is_active
+
+              // Border colour: teal all-round when live, otherwise left-accent only
+              const borderClass = isActive
+                ? 'border-2 border-[#00B4A6]'
+                : [
+                    'border border-[#2A2D3E]',
+                    isSchengen
+                      ? 'border-l-2 border-l-[#00B4A6]'
+                      : 'border-l-2 border-l-[#F59E0B]',
+                  ].join(' ')
 
               return (
                 <div
@@ -294,16 +384,16 @@ export default function TripBuilderPage() {
                   onDrop={() => handleDrop(index)}
                   onDragEnd={() => { setDragIndex(null); setDragOverIndex(null) }}
                   className={[
-                    'flex flex-col sm:grid sm:grid-cols-[20px_1fr_130px_130px_52px_32px]',
+                    'flex flex-col sm:grid',
                     'gap-y-2 sm:gap-y-0 sm:gap-x-3 sm:items-center',
                     'bg-[#1A1D27] rounded-lg px-3 py-2.5 transition-all duration-150',
-                    'border border-[#2A2D3E]',
-                    isSchengen ? 'border-l-2 border-l-[#00B4A6]' : 'border-l-2 border-l-[#F59E0B]',
+                    borderClass,
                     isDragging ? 'opacity-40' : 'opacity-100',
                     isDragOver ? 'ring-1 ring-[#6366F1] scale-[1.005]' : '',
                   ].join(' ')}
+                  style={{ gridTemplateColumns: '20px 1fr 130px 130px 52px 28px 32px' }}
                 >
-                  {/* Row 1: handle + country + delete (mobile) */}
+                  {/* Row 1: handle + country + [arrive btn on mobile] + delete */}
                   <div className="flex items-center gap-3 sm:contents">
                     <span className="text-[#4A5568] cursor-grab active:cursor-grabbing select-none
                                      text-xs leading-none tracking-tighter shrink-0">
@@ -327,6 +417,21 @@ export default function TripBuilderPage() {
                         </option>
                       ))}
                     </select>
+
+                    {/* Arrive button — mobile only */}
+                    <button
+                      onClick={() => handleMarkArrived(seg)}
+                      title={isActive ? 'Stop tracking' : 'Mark as current location'}
+                      className={[
+                        'sm:hidden text-sm leading-none shrink-0 transition-colors',
+                        isActive
+                          ? 'text-[#00B4A6]'
+                          : 'text-[#4A5568] hover:text-[#00B4A6]',
+                      ].join(' ')}
+                    >
+                      {isActive ? '●' : '✈'}
+                    </button>
+
                     <button
                       onClick={() => handleDeleteSegment(seg.id)}
                       className="sm:hidden text-[#4A5568] hover:text-[#EF4444] transition-colors
@@ -337,7 +442,7 @@ export default function TripBuilderPage() {
                     </button>
                   </div>
 
-                  {/* Row 2: dates + duration + delete (desktop) */}
+                  {/* Row 2: dates + duration + arrive btn (desktop) + delete (desktop) */}
                   <div className="flex items-center gap-2 pl-7 sm:pl-0 sm:contents">
                     <input
                       type="date"
@@ -361,6 +466,21 @@ export default function TripBuilderPage() {
                         ? `${stayDays(seg.arrival_date, seg.departure_date)}d`
                         : '—'}
                     </span>
+
+                    {/* Arrive button — desktop */}
+                    <button
+                      onClick={() => handleMarkArrived(seg)}
+                      title={isActive ? 'Stop tracking' : 'Mark as current location'}
+                      className={[
+                        'hidden sm:block text-sm leading-none transition-colors',
+                        isActive
+                          ? 'text-[#00B4A6]'
+                          : 'text-[#4A5568] hover:text-[#00B4A6]',
+                      ].join(' ')}
+                    >
+                      {isActive ? '●' : '✈'}
+                    </button>
+
                     <button
                       onClick={() => handleDeleteSegment(seg.id)}
                       className="hidden sm:block text-[#4A5568] hover:text-[#EF4444]
@@ -451,6 +571,13 @@ export default function TripBuilderPage() {
               <p className="text-[#EF4444] text-xs mt-2">{addError}</p>
             )}
           </div>
+
+          {/* Arrive-button legend */}
+          {segments.length > 0 && (
+            <p className="text-[#4A5568] text-xs mt-3 px-1">
+              ✈ = mark as current location &nbsp;·&nbsp; ● = currently tracking (tap to stop)
+            </p>
+          )}
         </div>
 
         {/* ── Right: Schengen sidebar ───────────────────────────────────────── */}
