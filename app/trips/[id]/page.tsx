@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -9,6 +10,9 @@ import { COUNTRIES } from '@/lib/countries'
 import { countSchengenDays, findFirstViolation, SCHENGEN_CODES } from '@/lib/schengen'
 import { TripTimeline } from '@/components/trip-timeline'
 import { CountdownCard } from '@/components/countdown-card'
+
+// Dynamic import — maplibre-gl references `window` at import time, so SSR must be disabled
+const TripMap = dynamic(() => import('@/components/trip-map'), { ssr: false })
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,6 +85,20 @@ export default function TripBuilderPage() {
   const [newSeg, setNewSeg] = useState({ country_code: 'FR', arrival_date: '', departure_date: '' })
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState('')
+
+  // Map controls
+  const [showListFallback, setShowListFallback] = useState(false)
+
+  // Selecting a country from the map pre-fills the form and scrolls to it
+  const addFormRef = useRef<HTMLDivElement>(null)
+  const handleMapCountrySelect = useCallback((code: string) => {
+    setNewSeg((prev) => ({ ...prev, country_code: code }))
+    setShowListFallback(false)
+    // Smooth-scroll the add form into view so user can enter dates
+    setTimeout(() => {
+      addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+  }, [])
 
   // ── Load trip on mount ──────────────────────────────────────────────────
 
@@ -327,6 +345,26 @@ export default function TripBuilderPage() {
         />
       )}
 
+      {/* ── Interactive destination map ───────────────────────────────────── */}
+      <div className="mb-4">
+        <TripMap
+          passportCountry={passportCountry}
+          segments={segments}
+          selectedCountryCode={newSeg.country_code}
+          onCountrySelect={handleMapCountrySelect}
+        />
+        {/* Fallback link */}
+        <p className="text-center mt-2.5">
+          <button
+            onClick={() => setShowListFallback((v) => !v)}
+            className="text-[#4A5568] hover:text-[#94A3B8] text-xs transition-colors underline
+                       underline-offset-2"
+          >
+            {showListFallback ? 'Hide list' : 'or choose from a list'}
+          </button>
+        </p>
+      </div>
+
       {/* Timeline — full width above the two-column layout */}
       {segments.length > 0 && (
         <div className="mb-6">
@@ -491,27 +529,45 @@ export default function TripBuilderPage() {
           )}
 
           {/* Add segment form */}
-          <div className="mt-4 bg-[#1A1D27] border border-[#2A2D3E] rounded-lg p-4">
+          <div ref={addFormRef} className="mt-4 bg-[#1A1D27] border border-[#2A2D3E] rounded-lg p-4">
             <h3 className="text-white text-sm font-medium mb-3">Add destination</h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px_140px_auto] gap-3 items-end">
               <div>
                 <label className="block text-xs text-[#94A3B8] mb-1.5">Country</label>
-                <select
-                  value={newSeg.country_code}
-                  onChange={(e) =>
-                    setNewSeg((prev) => ({ ...prev, country_code: e.target.value }))
-                  }
-                  className="w-full bg-[#0F1117] border border-[#2A2D3E] rounded-md px-3 py-2.5
-                             text-white text-sm focus:outline-none focus:border-[#6366F1]
-                             transition-colors"
-                >
-                  {COUNTRIES.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+
+                {/* Map-selection pill (primary) */}
+                {!showListFallback ? (
+                  <div className="flex items-center gap-2 bg-[#0F1117] border border-[#6366F1]/60
+                                  rounded-md px-3 py-2 h-[42px]">
+                    <span className="text-lg leading-none">
+                      {Array.from(newSeg.country_code.toUpperCase())
+                        .map((c) => String.fromCodePoint(127397 + c.charCodeAt(0)))
+                        .join('')}
+                    </span>
+                    <span className="text-white text-sm font-medium truncate">
+                      {COUNTRIES.find((c) => c.code === newSeg.country_code)?.name ?? newSeg.country_code}
+                    </span>
+                    <span className="ml-auto text-[#4A5568] text-xs shrink-0">from map</span>
+                  </div>
+                ) : (
+                  /* Dropdown fallback */
+                  <select
+                    value={newSeg.country_code}
+                    onChange={(e) =>
+                      setNewSeg((prev) => ({ ...prev, country_code: e.target.value }))
+                    }
+                    className="w-full bg-[#0F1117] border border-[#2A2D3E] rounded-md px-3 py-2.5
+                               text-white text-sm focus:outline-none focus:border-[#6366F1]
+                               transition-colors"
+                  >
+                    {COUNTRIES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>

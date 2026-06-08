@@ -7,3 +7,39 @@ body {
   color: #E2E8F0;
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ── MapLibre: pulsing marker ring animation ─────────────────────────────── */
+
+@keyframes bm-ping {
+  0%   { transform: scale(0.9); opacity: 0.7; }
+  70%  { transform: scale(2.4); opacity: 0;   }
+  100% { transform: scale(2.4); opacity: 0;   }
+}
+
+.bm-marker-ping {
+  animation: bm-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ── MapLibre: reset popup chrome so our own card styling shows through ──── */
+
+.maplibregl-popup-content {
+  background:    transparent !important;
+  padding:       0           !important;
+  border-radius: 0           !important;
+  box-shadow:    none        !important;
+}
+
+.maplibregl-popup-tip {
+  display: none !important;
+}
+
+.maplibregl-popup {
+  z-index: 20 !important;
+}
+
+/* ── MapLibre: hide attribution / logo (replace with manual credit if needed) */
+
+.maplibregl-ctrl-logo,
+.maplibregl-ctrl-attrib {
+  display: none !important;
+}
