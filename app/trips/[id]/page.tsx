@@ -7,11 +7,12 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useTripStore, DbSegment } from '@/store/trip-store'
 import { COUNTRIES } from '@/lib/countries'
-import { countSchengenDays, findFirstViolation, SCHENGEN_CODES } from '@/lib/schengen'
+import { SCHENGEN_CODES } from '@/lib/schengen'
 import { TripTimeline } from '@/components/trip-timeline'
 import { CountdownCard } from '@/components/countdown-card'
+import { VisaCompliancePanel } from '@/components/visa-compliance-panel'
 
-// Dynamic import — maplibre-gl references `window` at import time, so SSR must be disabled
+// Dynamic import — maplibre-gl references `window` at import time, SSR must be off
 const TripMap = dynamic(() => import('@/components/trip-map'), { ssr: false })
 
 // ---------------------------------------------------------------------------
@@ -29,33 +30,6 @@ function stayDays(arrival: string, departure: string): number {
   return Math.max(0, Math.round((d.getTime() - a.getTime()) / 86_400_000) + 1)
 }
 
-function getMaxSchengenDays(segments: DbSegment[]): number {
-  if (!segments.length) return 0
-  const sch = segments.filter((s) => SCHENGEN_CODES.has(s.country_code))
-  if (!sch.length) return 0
-
-  const tripStart = segments.reduce(
-    (m, s) => (s.arrival_date < m ? s.arrival_date : m),
-    segments[0].arrival_date
-  )
-  const tripEnd = segments.reduce(
-    (m, s) => (s.departure_date > m ? s.departure_date : m),
-    segments[0].departure_date
-  )
-
-  const start = new Date(tripStart + 'T00:00:00Z')
-  const end = new Date(tripEnd + 'T00:00:00Z')
-  const totalDays = Math.round((end.getTime() - start.getTime()) / 86_400_000)
-
-  let max = 0
-  for (let i = 0; i <= totalDays; i++) {
-    const d = new Date(start.getTime() + i * 86_400_000).toISOString().slice(0, 10)
-    const count = countSchengenDays(segments, d)
-    if (count > max) max = count
-  }
-  return max
-}
-
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -68,39 +42,29 @@ export default function TripBuilderPage() {
   const { trip, segments, load, reset, setTripName, addSegment, updateSegment, setSegments } =
     useTripStore()
 
-  const [pageStatus, setPageStatus] = useState<'loading' | 'ready'>('loading')
+  const [pageStatus,      setPageStatus]      = useState<'loading' | 'ready'>('loading')
   const [passportCountry, setPassportCountry] = useState('US')
-  const [now, setNow] = useState(todayUTC)
+  const [now,             setNow]             = useState(todayUTC)
 
   // Debounce timers
   const nameTimer = useRef<NodeJS.Timeout>()
   const segTimers = useRef<Map<string, NodeJS.Timeout>>(new Map())
-  const posTimer = useRef<NodeJS.Timeout>()
+  const posTimer  = useRef<NodeJS.Timeout>()
 
-  // Drag-to-reorder state
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  // Drag-to-reorder
+  const [dragIndex,     setDragIndex]     = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
   // Add-segment form
-  const [newSeg, setNewSeg] = useState({ country_code: 'FR', arrival_date: '', departure_date: '' })
-  const [adding, setAdding] = useState(false)
+  const [newSeg,   setNewSeg]   = useState({ country_code: 'FR', arrival_date: '', departure_date: '' })
+  const [adding,   setAdding]   = useState(false)
   const [addError, setAddError] = useState('')
 
   // Map controls
   const [showListFallback, setShowListFallback] = useState(false)
-
-  // Selecting a country from the map pre-fills the form and scrolls to it
   const addFormRef = useRef<HTMLDivElement>(null)
-  const handleMapCountrySelect = useCallback((code: string) => {
-    setNewSeg((prev) => ({ ...prev, country_code: code }))
-    setShowListFallback(false)
-    // Smooth-scroll the add form into view so user can enter dates
-    setTimeout(() => {
-      addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }, 100)
-  }, [])
 
-  // ── Load trip on mount ──────────────────────────────────────────────────
+  // ── Load trip ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
     reset()
@@ -111,7 +75,6 @@ export default function TripBuilderPage() {
       if (!session) { router.push('/login'); return }
 
       const userId = session.user.id
-
       const [
         { data: tripData, error: tripErr },
         { data: segData },
@@ -123,10 +86,7 @@ export default function TripBuilderPage() {
       ])
 
       if (tripErr || !tripData) { router.push('/dashboard'); return }
-
-      if (userData?.passport_country) {
-        setPassportCountry(userData.passport_country)
-      }
+      if (userData?.passport_country) setPassportCountry(userData.passport_country)
 
       load(tripData, segData ?? [])
       setPageStatus('ready')
@@ -135,7 +95,7 @@ export default function TripBuilderPage() {
     init()
   }, [tripId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Hourly tick to keep countdown current ─────────────────────────────
+  // ── Hourly tick ───────────────────────────────────────────────────────────
 
   useEffect(() => {
     const id = setInterval(() => setNow(todayUTC()), 3_600_000)
@@ -143,18 +103,10 @@ export default function TripBuilderPage() {
   }, [])
 
   // ---------------------------------------------------------------------------
-  // Schengen stats (recomputed whenever segments change)
+  // Derived
   // ---------------------------------------------------------------------------
 
-  const schengenDays = useMemo(() => getMaxSchengenDays(segments), [segments])
-  const violation = useMemo(() => findFirstViolation(segments), [segments])
-
-  const barPct = Math.min(100, (schengenDays / 90) * 100)
-  const barColor =
-    schengenDays >= 90 ? 'bg-[#EF4444]' : schengenDays >= 70 ? 'bg-[#F59E0B]' : 'bg-[#22C55E]'
-
-  // Active segment (the one currently being tracked live)
-  const activeSeg = useMemo(() => segments.find((s) => s.is_active) ?? null, [segments])
+  const activeSeg = useMemo(() => segments.find(s => s.is_active) ?? null, [segments])
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -183,91 +135,95 @@ export default function TripBuilderPage() {
 
   const handleMarkArrived = useCallback(
     async (seg: DbSegment) => {
-      // If already active, deactivate (stop tracking)
       if (seg.is_active) {
         updateSegment(seg.id, { is_active: false })
         await supabase.from('segments').update({ is_active: false }).eq('id', seg.id)
         return
       }
-
-      // Deactivate all other segments in local store first
-      segments.forEach((s) => {
-        if (s.is_active) updateSegment(s.id, { is_active: false })
-      })
-
-      // Activate this segment, set actual_arrival_date to today if not already set
+      segments.forEach(s => { if (s.is_active) updateSegment(s.id, { is_active: false }) })
       const arrival = seg.actual_arrival_date ?? now
       updateSegment(seg.id, { is_active: true, actual_arrival_date: arrival })
-
-      // Persist: deactivate others, activate this one
       const deactivateOthers = segments
-        .filter((s) => s.is_active && s.id !== seg.id)
-        .map((s) => supabase.from('segments').update({ is_active: false }).eq('id', s.id))
-
+        .filter(s => s.is_active && s.id !== seg.id)
+        .map(s => supabase.from('segments').update({ is_active: false }).eq('id', s.id))
       await Promise.all([
         ...deactivateOthers,
-        supabase
-          .from('segments')
-          .update({ is_active: true, actual_arrival_date: arrival })
-          .eq('id', seg.id),
+        supabase.from('segments').update({ is_active: true, actual_arrival_date: arrival }).eq('id', seg.id),
       ])
     },
     [segments, updateSegment, now]
   )
 
+  // Map: "Add as destination" — pre-fill form and scroll to it
+  const handleMapAddDestination = useCallback((code: string) => {
+    setNewSeg(prev => ({ ...prev, country_code: code }))
+    setShowListFallback(false)
+    setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
+  }, [])
+
+  // Map: "Mark as current location" — use existing segment or insert a new one
+  const handleMapMarkCurrentLocation = useCallback(
+    async (code: string) => {
+      const existingSeg = segments.find(s => s.country_code === code)
+      if (existingSeg) { handleMarkArrived(existingSeg); return }
+
+      const country = COUNTRIES.find(c => c.code === code)
+      if (!country) return
+      const today = now
+
+      segments.forEach(s => { if (s.is_active) updateSegment(s.id, { is_active: false }) })
+      const deactivateOthers = segments
+        .filter(s => s.is_active)
+        .map(s => supabase.from('segments').update({ is_active: false }).eq('id', s.id))
+
+      const { data, error } = await supabase
+        .from('segments')
+        .insert({
+          trip_id: tripId, country_code: code, country_name: country.name,
+          arrival_date: today, departure_date: today, position: segments.length + 1,
+          is_active: true, actual_arrival_date: today,
+        })
+        .select()
+        .single()
+
+      await Promise.all(deactivateOthers)
+      if (!error && data) addSegment(data)
+    },
+    [segments, tripId, now, updateSegment, addSegment, handleMarkArrived]
+  )
+
   async function handleAddSegment() {
     setAddError('')
-    if (!newSeg.arrival_date || !newSeg.departure_date) {
-      setAddError('Both dates are required.')
-      return
-    }
-    if (newSeg.departure_date < newSeg.arrival_date) {
-      setAddError('Departure must be on or after arrival.')
-      return
-    }
+    if (!newSeg.arrival_date || !newSeg.departure_date) { setAddError('Both dates are required.'); return }
+    if (newSeg.departure_date < newSeg.arrival_date) { setAddError('Departure must be on or after arrival.'); return }
 
     setAdding(true)
-    const country = COUNTRIES.find((c) => c.code === newSeg.country_code)!
+    const country  = COUNTRIES.find(c => c.code === newSeg.country_code)!
     const position = segments.length + 1
-
     const { data, error } = await supabase
       .from('segments')
       .insert({
-        trip_id: tripId,
-        country_code: newSeg.country_code,
-        country_name: country.name,
-        arrival_date: newSeg.arrival_date,
-        departure_date: newSeg.departure_date,
-        position,
-        is_active: false,
-        actual_arrival_date: null,
+        trip_id: tripId, country_code: newSeg.country_code, country_name: country.name,
+        arrival_date: newSeg.arrival_date, departure_date: newSeg.departure_date,
+        position, is_active: false, actual_arrival_date: null,
       })
       .select()
       .single()
 
-    if (error) {
-      setAddError(error.message)
-    } else if (data) {
+    if (error) setAddError(error.message)
+    else if (data) {
       addSegment(data)
-      setNewSeg((prev) => ({ ...prev, arrival_date: '', departure_date: '' }))
+      setNewSeg(prev => ({ ...prev, arrival_date: '', departure_date: '' }))
     }
     setAdding(false)
   }
 
   async function handleDeleteSegment(id: string) {
-    const updated = segments
-      .filter((s) => s.id !== id)
-      .map((s, i) => ({ ...s, position: i + 1 }))
-
+    const updated = segments.filter(s => s.id !== id).map((s, i) => ({ ...s, position: i + 1 }))
     setSegments(updated)
-
     await supabase.from('segments').delete().eq('id', id)
     if (updated.length) {
-      await Promise.all(
-        updated.map((s) =>
-          supabase.from('segments').update({ position: s.position }).eq('id', s.id)
-        )
-      )
+      await Promise.all(updated.map(s => supabase.from('segments').update({ position: s.position }).eq('id', s.id)))
     }
   }
 
@@ -278,26 +234,17 @@ export default function TripBuilderPage() {
 
   function handleDrop(dropIndex: number) {
     if (dragIndex === null || dragIndex === dropIndex) {
-      setDragIndex(null)
-      setDragOverIndex(null)
-      return
+      setDragIndex(null); setDragOverIndex(null); return
     }
-
     const reordered = [...segments]
     const [moved] = reordered.splice(dragIndex, 1)
     reordered.splice(dropIndex, 0, moved)
     const reindexed = reordered.map((s, i) => ({ ...s, position: i + 1 }))
     setSegments(reindexed)
-    setDragIndex(null)
-    setDragOverIndex(null)
-
+    setDragIndex(null); setDragOverIndex(null)
     clearTimeout(posTimer.current)
     posTimer.current = setTimeout(async () => {
-      await Promise.all(
-        reindexed.map((s) =>
-          supabase.from('segments').update({ position: s.position }).eq('id', s.id)
-        )
-      )
+      await Promise.all(reindexed.map(s => supabase.from('segments').update({ position: s.position }).eq('id', s.id)))
     }, 1000)
   }
 
@@ -312,85 +259,123 @@ export default function TripBuilderPage() {
       </div>
     )
   }
-
   if (!trip) return null
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
-      {/* Header */}
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-4 mb-8">
-        <Link
-          href="/dashboard"
-          className="text-[#94A3B8] hover:text-white text-sm transition-colors shrink-0"
-        >
+        <Link href="/dashboard"
+          className="text-[#94A3B8] hover:text-white text-sm transition-colors shrink-0">
           ← Dashboard
         </Link>
         <input
-          type="text"
-          value={trip.name}
-          onChange={(e) => handleNameChange(e.target.value)}
+          type="text" value={trip.name}
+          onChange={e => handleNameChange(e.target.value)}
           className="flex-1 min-w-0 bg-transparent text-white text-xl font-semibold focus:outline-none
                      border-b border-transparent focus:border-[#2A2D3E] pb-0.5 transition-colors"
           placeholder="Trip name"
         />
       </div>
 
-      {/* ── Live countdown card ─────────────────────────────────────────────── */}
-      {activeSeg && (
-        <CountdownCard
-          seg={activeSeg}
-          allSegments={segments}
-          passportCountry={passportCountry}
-          now={now}
-        />
-      )}
-
-      {/* ── Interactive destination map ───────────────────────────────────── */}
+      {/* ── Map ──────────────────────────────────────────────────────────────── */}
       <div className="mb-4">
         <TripMap
           passportCountry={passportCountry}
           segments={segments}
-          selectedCountryCode={newSeg.country_code}
-          onCountrySelect={handleMapCountrySelect}
+          onAddDestination={handleMapAddDestination}
+          onMarkCurrentLocation={handleMapMarkCurrentLocation}
         />
-        {/* Fallback link */}
         <p className="text-center mt-2.5">
           <button
-            onClick={() => setShowListFallback((v) => !v)}
-            className="text-[#4A5568] hover:text-[#94A3B8] text-xs transition-colors underline
-                       underline-offset-2"
+            onClick={() => setShowListFallback(v => !v)}
+            className="text-[#4A5568] hover:text-[#94A3B8] text-xs transition-colors underline underline-offset-2"
           >
             {showListFallback ? 'Hide list' : 'or choose from a list'}
           </button>
         </p>
       </div>
 
-      {/* Timeline — full width above the two-column layout */}
-      {segments.length > 0 && (
-        <div className="mb-6">
-          <TripTimeline segments={segments} violation={violation} />
-        </div>
-      )}
-
-      {/* Two-column layout */}
+      {/* ── Two-column layout ─────────────────────────────────────────────── */}
       <div className="flex flex-col lg:flex-row gap-6">
 
-        {/* ── Left: segment list ────────────────────────────────────────────── */}
+        {/* ── Left: form + timeline + segment list ──────────────────────── */}
         <div className="flex-1 min-w-0">
+
+          {/* Add destination form */}
+          <div ref={addFormRef} className="mb-5 bg-[#1A1D27] border border-[#2A2D3E] rounded-lg p-4">
+            <h3 className="text-white text-sm font-medium mb-3">Add destination</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px_140px_auto] gap-3 items-end">
+              <div>
+                <label className="block text-xs text-[#94A3B8] mb-1.5">Country</label>
+                {!showListFallback ? (
+                  <div className="flex items-center gap-2 bg-[#0F1117] border border-[#6366F1]/60
+                                  rounded-md px-3 py-2 h-[42px]">
+                    <span className="text-lg leading-none">
+                      {Array.from(newSeg.country_code.toUpperCase())
+                        .map(c => String.fromCodePoint(127397 + c.charCodeAt(0))).join('')}
+                    </span>
+                    <span className="text-white text-sm font-medium truncate">
+                      {COUNTRIES.find(c => c.code === newSeg.country_code)?.name ?? newSeg.country_code}
+                    </span>
+                    <span className="ml-auto text-[#4A5568] text-xs shrink-0">from map</span>
+                  </div>
+                ) : (
+                  <select
+                    value={newSeg.country_code}
+                    onChange={e => setNewSeg(prev => ({ ...prev, country_code: e.target.value }))}
+                    className="w-full bg-[#0F1117] border border-[#2A2D3E] rounded-md px-3 py-2.5
+                               text-white text-sm focus:outline-none focus:border-[#6366F1] transition-colors"
+                  >
+                    {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs text-[#94A3B8] mb-1.5">Arrival</label>
+                <input type="date" value={newSeg.arrival_date}
+                  onChange={e => setNewSeg(prev => ({ ...prev, arrival_date: e.target.value }))}
+                  className="w-full bg-[#0F1117] border border-[#2A2D3E] rounded-md px-3 py-2.5
+                             text-white text-sm focus:outline-none focus:border-[#6366F1]
+                             transition-colors [color-scheme:dark]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-[#94A3B8] mb-1.5">Departure</label>
+                <input type="date" value={newSeg.departure_date} min={newSeg.arrival_date}
+                  onChange={e => setNewSeg(prev => ({ ...prev, departure_date: e.target.value }))}
+                  className="w-full bg-[#0F1117] border border-[#2A2D3E] rounded-md px-3 py-2.5
+                             text-white text-sm focus:outline-none focus:border-[#6366F1]
+                             transition-colors [color-scheme:dark]"
+                />
+              </div>
+              <button
+                onClick={handleAddSegment} disabled={adding}
+                className="bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-40 text-white text-sm
+                           font-medium px-4 py-2.5 rounded-md transition-colors whitespace-nowrap"
+              >
+                {adding ? 'Adding…' : '+ Add'}
+              </button>
+            </div>
+            {addError && <p className="text-[#EF4444] text-xs mt-2">{addError}</p>}
+          </div>
+
+          {/* Timeline — same width as the form above */}
+          {segments.length > 0 && (
+            <div className="mb-5">
+              <TripTimeline segments={segments} passportCountry={passportCountry} />
+            </div>
+          )}
 
           {/* Column headers */}
           {segments.length > 0 && (
             <div
-              className="hidden sm:grid gap-3 px-3 mb-1.5
-                          text-[11px] text-[#94A3B8] uppercase tracking-widest"
-              style={{ gridTemplateColumns: '20px 1fr 130px 130px 52px 32px' }}
+              className="hidden sm:grid gap-3 px-3 mb-1.5 text-[11px] text-[#94A3B8] uppercase tracking-widest"
+              style={{ gridTemplateColumns: '20px 1fr 130px 130px 52px 64px 32px' }}
             >
-              <div />
-              <div>Country</div>
-              <div>Arrival</div>
-              <div>Departure</div>
-              <div className="text-right">Days</div>
-              <div />
+              <div /><div>Country</div><div>Arrival</div><div>Departure</div>
+              <div className="text-right">Days</div><div /><div />
             </div>
           )}
 
@@ -400,16 +385,13 @@ export default function TripBuilderPage() {
               const isSchengen = SCHENGEN_CODES.has(seg.country_code)
               const isDragging = dragIndex === index
               const isDragOver = dragOverIndex === index && dragIndex !== index
-              const isActive = seg.is_active
+              const isActive   = seg.is_active
 
-              // Border colour: teal all-round when live, otherwise left-accent only
               const borderClass = isActive
                 ? 'border-2 border-[#00B4A6]'
                 : [
                     'border border-[#2A2D3E]',
-                    isSchengen
-                      ? 'border-l-2 border-l-[#00B4A6]'
-                      : 'border-l-2 border-l-[#F59E0B]',
+                    isSchengen ? 'border-l-2 border-l-[#00B4A6]' : 'border-l-2 border-l-[#F59E0B]',
                   ].join(' ')
 
               return (
@@ -417,102 +399,70 @@ export default function TripBuilderPage() {
                   key={seg.id}
                   draggable
                   onDragStart={() => setDragIndex(index)}
-                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragOver={e => handleDragOver(e, index)}
                   onDrop={() => handleDrop(index)}
                   onDragEnd={() => { setDragIndex(null); setDragOverIndex(null) }}
                   className={[
-                    'flex flex-col sm:grid',
-                    'gap-y-2 sm:gap-y-0 sm:gap-x-3 sm:items-center',
+                    'flex flex-col sm:grid gap-y-2 sm:gap-y-0 sm:gap-x-3 sm:items-center',
                     'bg-[#1A1D27] rounded-lg px-3 py-2.5 transition-all duration-150',
                     borderClass,
                     isDragging ? 'opacity-40' : 'opacity-100',
                     isDragOver ? 'ring-1 ring-[#6366F1] scale-[1.005]' : '',
                   ].join(' ')}
-                  style={{ gridTemplateColumns: '20px 1fr 130px 130px 52px 32px' }}
+                  style={{ gridTemplateColumns: '20px 1fr 130px 130px 52px 64px 32px' }}
                 >
-                  {/* Row 1: handle + country + [arrive btn on mobile] + delete */}
+                  {/* Row 1: handle + country + delete (mobile) */}
                   <div className="flex items-center gap-3 sm:contents">
-                    <span className="text-[#4A5568] cursor-grab active:cursor-grabbing select-none
-                                     text-xs leading-none tracking-tighter shrink-0">
+                    <span className="text-[#4A5568] cursor-grab active:cursor-grabbing select-none text-xs leading-none tracking-tighter shrink-0">
                       ⠿
                     </span>
                     <select
                       value={seg.country_code}
-                      onChange={(e) => {
-                        const c = COUNTRIES.find((x) => x.code === e.target.value)!
-                        handleSegmentChange(seg.id, {
-                          country_code: e.target.value,
-                          country_name: c.name,
-                        })
+                      onChange={e => {
+                        const c = COUNTRIES.find(x => x.code === e.target.value)!
+                        handleSegmentChange(seg.id, { country_code: e.target.value, country_name: c.name })
                       }}
-                      className="flex-1 sm:flex-none bg-transparent text-white text-sm
-                                 focus:outline-none cursor-pointer truncate"
+                      className="flex-1 sm:flex-none bg-transparent text-white text-sm focus:outline-none cursor-pointer truncate"
                     >
-                      {COUNTRIES.map((c) => (
-                        <option key={c.code} value={c.code} className="bg-[#1A1D27]">
-                          {c.name}
-                        </option>
-                      ))}
+                      {COUNTRIES.map(c => <option key={c.code} value={c.code} className="bg-[#1A1D27]">{c.name}</option>)}
                     </select>
-
-                    <button
-                      onClick={() => handleDeleteSegment(seg.id)}
-                      className="sm:hidden text-[#4A5568] hover:text-[#EF4444] transition-colors
-                                 text-base leading-none shrink-0"
-                      aria-label="Delete segment"
-                    >
-                      ✕
-                    </button>
+                    <button onClick={() => handleDeleteSegment(seg.id)}
+                      className="sm:hidden text-[#4A5568] hover:text-[#EF4444] transition-colors text-base leading-none shrink-0"
+                      aria-label="Delete segment">✕</button>
                   </div>
 
-                  {/* Row 2: dates + duration + delete (desktop) */}
+                  {/* Row 2: dates + days + Track/Live + delete (desktop) */}
                   <div className="flex items-center gap-2 pl-7 sm:pl-0 sm:contents">
-                    <input
-                      type="date"
-                      value={seg.arrival_date}
-                      onChange={(e) => handleSegmentChange(seg.id, { arrival_date: e.target.value })}
-                      className="flex-1 sm:flex-none bg-transparent text-white text-sm
-                                 focus:outline-none w-full [color-scheme:dark]"
+                    <input type="date" value={seg.arrival_date}
+                      onChange={e => handleSegmentChange(seg.id, { arrival_date: e.target.value })}
+                      className="flex-1 sm:flex-none bg-transparent text-white text-sm focus:outline-none w-full [color-scheme:dark]"
                     />
-                    <input
-                      type="date"
-                      value={seg.departure_date}
-                      min={seg.arrival_date}
-                      onChange={(e) =>
-                        handleSegmentChange(seg.id, { departure_date: e.target.value })
-                      }
-                      className="flex-1 sm:flex-none bg-transparent text-white text-sm
-                                 focus:outline-none w-full [color-scheme:dark]"
+                    <input type="date" value={seg.departure_date} min={seg.arrival_date}
+                      onChange={e => handleSegmentChange(seg.id, { departure_date: e.target.value })}
+                      className="flex-1 sm:flex-none bg-transparent text-white text-sm focus:outline-none w-full [color-scheme:dark]"
                     />
                     <span className="text-[#94A3B8] text-sm text-right font-mono shrink-0">
                       {seg.arrival_date && seg.departure_date
-                        ? `${stayDays(seg.arrival_date, seg.departure_date)}d`
-                        : '—'}
+                        ? `${stayDays(seg.arrival_date, seg.departure_date)}d` : '—'}
                     </span>
 
-                    <button
-                      onClick={() => handleDeleteSegment(seg.id)}
-                      className="hidden sm:block text-[#4A5568] hover:text-[#EF4444]
-                                 transition-colors text-base leading-none"
-                      aria-label="Delete segment"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  {/* Row 3: "Mark as current location" labeled button — full width */}
-                  <div className="sm:col-span-full flex pt-1 sm:pt-2 sm:border-t sm:border-[#2A2D3E]">
+                    {/* Inline Track / ● Live button */}
                     <button
                       onClick={() => handleMarkArrived(seg)}
+                      title={isActive ? 'Stop live tracking' : 'Mark as current location'}
                       className={[
-                        'text-xs font-semibold px-3 py-1.5 rounded-md transition-colors',
+                        'text-[10px] font-semibold px-2 py-1 rounded-md transition-colors shrink-0 whitespace-nowrap',
                         isActive
-                          ? 'bg-[#00B4A6]/15 border border-[#00B4A6]/40 text-[#00B4A6] hover:bg-[#00B4A6]/25'
-                          : 'bg-[#6366F1] hover:bg-[#4F46E5] text-white',
+                          ? 'bg-[#00B4A6]/15 border border-[#00B4A6]/50 text-[#00B4A6] hover:bg-[#00B4A6]/25'
+                          : 'bg-[#6366F1]/15 border border-[#6366F1]/40 text-[#6366F1] hover:bg-[#6366F1]/25',
                       ].join(' ')}
                     >
-                      {isActive ? 'Currently here ✓' : 'Mark as current location'}
+                      {isActive ? '● Live' : 'Track'}
                     </button>
+
+                    <button onClick={() => handleDeleteSegment(seg.id)}
+                      className="hidden sm:block text-[#4A5568] hover:text-[#EF4444] transition-colors text-base leading-none"
+                      aria-label="Delete segment">✕</button>
                   </div>
                 </div>
               )
@@ -523,166 +473,56 @@ export default function TripBuilderPage() {
           {segments.length === 0 && (
             <div className="border border-dashed border-[#2A2D3E] rounded-lg p-10 text-center">
               <p className="text-[#94A3B8] text-sm">
-                No destinations yet. Add your first stop below.
+                Click a country on the map, or fill in the form above to add your first stop.
               </p>
             </div>
           )}
-
-          {/* Add segment form */}
-          <div ref={addFormRef} className="mt-4 bg-[#1A1D27] border border-[#2A2D3E] rounded-lg p-4">
-            <h3 className="text-white text-sm font-medium mb-3">Add destination</h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px_140px_auto] gap-3 items-end">
-              <div>
-                <label className="block text-xs text-[#94A3B8] mb-1.5">Country</label>
-
-                {/* Map-selection pill (primary) */}
-                {!showListFallback ? (
-                  <div className="flex items-center gap-2 bg-[#0F1117] border border-[#6366F1]/60
-                                  rounded-md px-3 py-2 h-[42px]">
-                    <span className="text-lg leading-none">
-                      {Array.from(newSeg.country_code.toUpperCase())
-                        .map((c) => String.fromCodePoint(127397 + c.charCodeAt(0)))
-                        .join('')}
-                    </span>
-                    <span className="text-white text-sm font-medium truncate">
-                      {COUNTRIES.find((c) => c.code === newSeg.country_code)?.name ?? newSeg.country_code}
-                    </span>
-                    <span className="ml-auto text-[#4A5568] text-xs shrink-0">from map</span>
-                  </div>
-                ) : (
-                  /* Dropdown fallback */
-                  <select
-                    value={newSeg.country_code}
-                    onChange={(e) =>
-                      setNewSeg((prev) => ({ ...prev, country_code: e.target.value }))
-                    }
-                    className="w-full bg-[#0F1117] border border-[#2A2D3E] rounded-md px-3 py-2.5
-                               text-white text-sm focus:outline-none focus:border-[#6366F1]
-                               transition-colors"
-                  >
-                    {COUNTRIES.map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs text-[#94A3B8] mb-1.5">Arrival</label>
-                <input
-                  type="date"
-                  value={newSeg.arrival_date}
-                  onChange={(e) =>
-                    setNewSeg((prev) => ({ ...prev, arrival_date: e.target.value }))
-                  }
-                  className="w-full bg-[#0F1117] border border-[#2A2D3E] rounded-md px-3 py-2.5
-                             text-white text-sm focus:outline-none focus:border-[#6366F1]
-                             transition-colors [color-scheme:dark]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-[#94A3B8] mb-1.5">Departure</label>
-                <input
-                  type="date"
-                  value={newSeg.departure_date}
-                  min={newSeg.arrival_date}
-                  onChange={(e) =>
-                    setNewSeg((prev) => ({ ...prev, departure_date: e.target.value }))
-                  }
-                  className="w-full bg-[#0F1117] border border-[#2A2D3E] rounded-md px-3 py-2.5
-                             text-white text-sm focus:outline-none focus:border-[#6366F1]
-                             transition-colors [color-scheme:dark]"
-                />
-              </div>
-
-              <button
-                onClick={handleAddSegment}
-                disabled={adding}
-                className="bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-40 text-white text-sm
-                           font-medium px-4 py-2.5 rounded-md transition-colors whitespace-nowrap"
-              >
-                {adding ? 'Adding…' : '+ Add'}
-              </button>
-            </div>
-
-            {addError && (
-              <p className="text-[#EF4444] text-xs mt-2">{addError}</p>
-            )}
-          </div>
-
         </div>
 
-        {/* ── Right: Schengen sidebar ───────────────────────────────────────── */}
-        <div className="w-full lg:w-64 shrink-0 space-y-3">
-
-          {/* Counter */}
-          <div className="bg-[#1A1D27] border border-[#2A2D3E] rounded-lg p-4">
-            <p className="text-[#94A3B8] text-xs uppercase tracking-widest mb-3">
-              Schengen days
-            </p>
-
-            <div className="flex items-end gap-1 mb-2">
-              <span className="text-white text-3xl font-mono font-semibold leading-none">
-                {schengenDays}
-              </span>
-              <span className="text-[#94A3B8] text-sm font-mono mb-0.5">/ 90</span>
-            </div>
-
-            <div className="w-full bg-[#2A2D3E] rounded-full h-1.5">
-              <div
-                className={`h-1.5 rounded-full transition-all duration-300 ${barColor}`}
-                style={{ width: `${barPct}%` }}
-              />
-            </div>
-
-            <p className="text-[#94A3B8] text-xs mt-2">
-              {schengenDays === 0 && 'No Schengen stays added yet'}
-              {schengenDays > 0 && schengenDays < 70 && `${90 - schengenDays} days remaining`}
-              {schengenDays >= 70 && schengenDays < 90 &&
-                `${90 - schengenDays} days left — watch this closely`}
-              {schengenDays >= 90 && 'Limit reached or exceeded'}
-            </p>
-          </div>
-
-          {/* Violations */}
-          {violation ? (
-            <div className="bg-[#EF4444]/10 border border-[#EF4444]/30 rounded-lg p-4">
-              <p className="text-[#EF4444] text-sm font-semibold mb-1">
-                ⚠ Schengen violation on {violation}
-              </p>
-              <p className="text-[#E2E8F0] text-sm leading-relaxed">
-                You&apos;ll exceed your 90-day limit. Shorten a Schengen stay before this date.
-              </p>
-            </div>
+        {/* ── Right sidebar ───────────────────────────────────────────────── */}
+        <div className="w-full lg:w-64 shrink-0">
+          {segments.length > 0 ? (
+            activeSeg ? (
+              /* Connected stack: countdown on top, compliance below */
+              <div>
+                <div className="bg-[#1A1D27] border border-[#2A2D3E] rounded-t-xl"
+                     style={{ borderBottomWidth: 0 }}>
+                  <CountdownCard
+                    segments={segments}
+                    passportCountry={passportCountry}
+                    now={now}
+                    stacked
+                  />
+                </div>
+                <VisaCompliancePanel
+                  segments={segments}
+                  passportCountry={passportCountry}
+                  stacked
+                />
+              </div>
+            ) : (
+              /* No active tracking — show tracking card standalone + compliance */
+              <div className="space-y-4">
+                <CountdownCard
+                  segments={segments}
+                  passportCountry={passportCountry}
+                  now={now}
+                />
+                <VisaCompliancePanel
+                  segments={segments}
+                  passportCountry={passportCountry}
+                />
+              </div>
+            )
           ) : (
-            <div className="bg-[#22C55E]/10 border border-[#22C55E]/30 rounded-lg p-4">
-              <p className="text-[#22C55E] text-sm font-medium">
-                ✓ Your route is compliant.
-              </p>
-              {segments.length > 0 && (
-                <p className="text-[#94A3B8] text-xs mt-1">
-                  No Schengen violations detected.
-                </p>
-              )}
-            </div>
+            /* No segments yet — just the compliance panel as placeholder */
+            <VisaCompliancePanel
+              segments={segments}
+              passportCountry={passportCountry}
+            />
           )}
-
-          {/* Zone legend */}
-          <div className="bg-[#1A1D27] border border-[#2A2D3E] rounded-lg p-3 space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-sm bg-[#00B4A6] shrink-0" />
-              <span className="text-[#94A3B8] text-xs">Schengen zone</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-sm bg-[#F59E0B] shrink-0" />
-              <span className="text-[#94A3B8] text-xs">Outside Schengen</span>
-            </div>
-          </div>
         </div>
+
       </div>
     </main>
   )
