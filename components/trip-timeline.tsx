@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import type { DbSegment } from '@/store/trip-store'
-import { getVisaRule, SUPPORTED_PASSPORTS } from '@/lib/visa-rules'
+import { getVisaRule, isPassportSupported, ruleTrustLabel, VISA_LABELS, VISA_COLORS } from '@/lib/visa-rules'
 
 // ---------------------------------------------------------------------------
 // Color palette — one color per unique country
@@ -53,15 +53,6 @@ function flag(code: string) {
 // Visa label helpers
 // ---------------------------------------------------------------------------
 
-const VISA_LABELS: Record<string, string> = {
-  visa_free: 'Visa-free', visa_on_arrival: 'Visa on arrival',
-  e_visa: 'eVisa required', visa_required: 'Visa required',
-}
-const VISA_COLORS: Record<string, string> = {
-  visa_free: '#22C55E', visa_on_arrival: '#00B4A6',
-  e_visa: '#F59E0B', visa_required: '#EF4444',
-}
-
 // ---------------------------------------------------------------------------
 // Tooltip state type
 // ---------------------------------------------------------------------------
@@ -87,8 +78,7 @@ interface Props {
 // ---------------------------------------------------------------------------
 
 export function TripTimeline({ segments, passportCountry }: Props) {
-  const passport = (SUPPORTED_PASSPORTS as string[]).includes(passportCountry)
-    ? passportCountry : 'US'
+  const passport = passportCountry
 
   const [tooltip, setTooltip] = useState<TooltipData | null>(null)
 
@@ -178,8 +168,8 @@ export function TripTimeline({ segments, passportCountry }: Props) {
       {/* ── Visa tooltip — rendered with fixed positioning outside the card ── */}
       {tooltip && (() => {
         const rule  = getVisaRule(passport, tooltip.seg.country_code)
-        const label = rule ? (VISA_LABELS[rule.type] ?? rule.type) : null
-        const color = rule ? (VISA_COLORS[rule.type] ?? '#94A3B8') : '#94A3B8'
+        const label = rule ? VISA_LABELS[rule.type] : null
+        const color = rule ? VISA_COLORS[rule.type] : '#94A3B8'
         return (
           <div
             style={{
@@ -209,11 +199,17 @@ export function TripTimeline({ segments, passportCountry }: Props) {
                     {label}
                   </span>
                   <p className="text-[#94A3B8] text-xs">
-                    Max stay: <span className="text-white font-semibold">{rule.max_stay_days} days</span>
+                    Max stay:{' '}
+                    <span className="text-white font-semibold">
+                      {rule.max_stay_days !== null ? `${rule.max_stay_days} days` : 'check official source'}
+                    </span>
+                  </p>
+                  <p className="text-[10px] mt-1" style={{ color: rule.status === 'baseline' ? '#F59E0B' : '#4A5568' }}>
+                    {ruleTrustLabel(rule)}
                   </p>
                 </>
               ) : (
-                <p className="text-[#4A5568] text-xs">No visa data</p>
+                <p className="text-[#4A5568] text-xs">{isPassportSupported(passport) ? 'No rule on file' : 'No data for your passport yet'}</p>
               )}
 
               {/* Stay duration */}

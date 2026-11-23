@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import type { DbSegment } from '@/store/trip-store'
 import { countSchengenDays, SCHENGEN_CODES } from '@/lib/schengen'
-import { getVisaRule, SUPPORTED_PASSPORTS } from '@/lib/visa-rules'
+import { getVisaRule } from '@/lib/visa-rules'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -108,9 +108,7 @@ export function CountdownCard({ segments, passportCountry, now, stacked }: Props
   const seg = segments[clampedIndex]
   const total = segments.length
 
-  const passport = (SUPPORTED_PASSPORTS as string[]).includes(passportCountry)
-    ? passportCountry
-    : 'US'
+  const passport = passportCountry
 
   const stats = useMemo(
     () => (seg ? computeStats(seg, segments, passport, now) : null),

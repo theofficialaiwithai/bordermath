@@ -1,0 +1,110 @@
+[
+ {
+  "passports": [
+   "UK"
+  ],
+  "destination": "TH",
+  "mode": "set",
+  "type": "visa_free",
+  "max_stay_days": 30,
+  "notes": "Tourism only, from 15 Sep 2026 (was 60). Land-border entry is normally limited to 2 per calendar year.",
+  "status": "official",
+  "source": {
+   "name": "GOV.UK travel advice: Thailand",
+   "url": "https://www.gov.uk/foreign-travel-advice/thailand/entry-requirements"
+  },
+  "verified_on": "2026-11-23"
+ },
+ {
+  "passports": [
+   "US",
+   "CA",
+   "AU",
+   "NZ"
+  ],
+  "destination": "TH",
+  "mode": "set",
+  "type": "visa_free",
+  "max_stay_days": 30,
+  "notes": "30-day exemption from 15 Sep 2026 (was 60). The eligible-country list was narrowed, so confirm your passport is on it.",
+  "status": "corroborated",
+  "source": {
+   "name": "KPMG GMS Flash Alert 2026-241 and GOV.UK",
+   "url": "https://kpmg.com/xx/en/our-insights/gms-flash-alert/2026/flash-alert-2026-241.html"
+  },
+  "verified_on": "2026-11-23"
+ },
+ {
+  "passports": [
+   "IN",
+   "DE",
+   "FR",
+   "NL",
+   "IE",
+   "BR",
+   "ZA",
+   "MX",
+   "PH",
+   "NG"
+  ],
+  "destination": "TH",
+  "mode": "patch",
+  "max_stay_days": null,
+  "notes": "Thailand cut its visa exemption to 30 days from 15 Sep 2026 and narrowed the eligible list. Confirm the rule for your passport."
+ },
+ {
+  "passports": [
+   "UK"
+  ],
+  "destination": "VN",
+  "mode": "set",
+  "type": "visa_free",
+  "max_stay_days": 45,
+  "notes": "45 days from arrival for tourism or business. Immigration will not change the date after you leave the airport or border.",
+  "status": "official",
+  "source": {
+   "name": "GOV.UK travel advice: Vietnam",
+   "url": "https://www.gov.uk/foreign-travel-advice/vietnam/entry-requirements"
+  },
+  "verified_on": "2026-11-23"
+ },
+ {
+  "passports": [
+   "UK"
+  ],
+  "destination": "GE",
+  "mode": "set",
+  "type": "visa_free",
+  "max_stay_days": 365,
+  "notes": "Up to one year without a visa.",
+  "status": "official",
+  "source": {
+   "name": "GOV.UK travel advice: Georgia",
+   "url": "https://www.gov.uk/foreign-travel-advice/georgia/entry-requirements"
+  },
+  "verified_on": "2026-11-23"
+ },
+ {
+  "passports": [
+   "US",
+   "CA",
+   "AU",
+   "NZ",
+   "IN",
+   "DE",
+   "FR",
+   "NL",
+   "IE",
+   "BR",
+   "ZA",
+   "MX",
+   "PH",
+   "NG"
+  ],
+  "destination": "GE",
+  "mode": "patch",
+  "when_days": 360,
+  "max_stay_days": 365,
+  "notes": "Up to one year. Baseline data says 360; GOV.UK says one year for UK passports."
+ }
+]

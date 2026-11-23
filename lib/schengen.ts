@@ -1,6 +1,7 @@
 export const SCHENGEN_CODES = new Set([
   'AT', // Austria
   'BE', // Belgium
+  'BG', // Bulgaria (full member since 2025-01-01)
   'HR', // Croatia
   'CZ', // Czech Republic
   'DK', // Denmark
@@ -21,6 +22,7 @@ export const SCHENGEN_CODES = new Set([
   'NO', // Norway
   'PL', // Poland
   'PT', // Portugal
+  'RO', // Romania (full member since 2025-01-01)
   'SK', // Slovakia
   'SI', // Slovenia
   'ES', // Spain

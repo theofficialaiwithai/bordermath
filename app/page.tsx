@@ -122,7 +122,7 @@ export default function LandingPage() {
         {/* Decorative stat strip */}
         <div className="relative mt-16 flex flex-wrap justify-center gap-8 text-center">
           {[
-            { value: '27', label: 'Schengen countries' },
+            { value: '29', label: 'Schengen countries' },
             { value: '90', label: 'Day rolling limit' },
             { value: '180', label: 'Day lookback window' },
           ].map(({ value, label }) => (

@@ -5,7 +5,7 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { DbSegment } from '@/store/trip-store'
 import { COUNTRIES } from '@/lib/countries'
-import { getVisaRule, SUPPORTED_PASSPORTS } from '@/lib/visa-rules'
+import { getVisaRule, isPassportSupported, ruleTrustLabel, VISA_LABELS, VISA_COLORS } from '@/lib/visa-rules'
 import { COUNTRY_COORDS } from '@/lib/country-coords'
 
 // ---------------------------------------------------------------------------
@@ -33,15 +33,6 @@ const BASEMAP = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.jso
 const CARTO_SOURCE = 'carto'
 const COUNTRY_LAYERS = ['place_country_1', 'place_country_2']
 
-const VISA_LABELS: Record<string, string> = {
-  visa_free: 'Visa-free', visa_on_arrival: 'Visa on arrival',
-  e_visa: 'eVisa required', visa_required: 'Visa required',
-}
-const VISA_COLORS: Record<string, string> = {
-  visa_free: '#22C55E', visa_on_arrival: '#00B4A6',
-  e_visa: '#F59E0B', visa_required: '#EF4444',
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -52,13 +43,17 @@ function codeToFlag(code: string) {
 }
 
 function buildPopupHTML(code: string, name: string, passport: string) {
-  const safe  = (SUPPORTED_PASSPORTS as string[]).includes(passport) ? passport : 'US'
-  const rule  = getVisaRule(safe, code)
-  const label = rule ? (VISA_LABELS[rule.type] ?? rule.type) : null
-  const color = rule ? (VISA_COLORS[rule.type] ?? '#94A3B8') : '#94A3B8'
+  const rule  = getVisaRule(passport, code)
+  const label = rule ? VISA_LABELS[rule.type] : null
+  const color = rule ? VISA_COLORS[rule.type] : '#94A3B8'
+  const days  = rule
+    ? rule.max_stay_days !== null
+      ? `Up to ${rule.max_stay_days} days`
+      : 'Stay limit: check official source'
+    : isPassportSupported(passport) ? 'No rule on file' : 'No data for your passport yet'
   return `
     <div style="background:rgba(26,29,39,0.97);border:1px solid #2A2D3E;border-radius:10px;
-      padding:10px 13px;min-width:155px;box-shadow:0 10px 28px rgba(0,0,0,0.5);
+      padding:10px 13px;min-width:155px;max-width:230px;box-shadow:0 10px 28px rgba(0,0,0,0.5);
       backdrop-filter:blur(10px);font-family:system-ui,-apple-system,sans-serif;">
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
         <span style="font-size:1.2rem;line-height:1">${codeToFlag(code)}</span>
@@ -66,8 +61,9 @@ function buildPopupHTML(code: string, name: string, passport: string) {
       </div>
       ${label ? `<span style="display:inline-block;padding:2px 8px;border-radius:20px;
         background:${color}22;border:1px solid ${color}55;color:${color};
-        font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">${label}</span>
-        ${rule ? `<div style="color:#94A3B8;font-size:0.71rem;margin-top:5px">Up to ${rule.max_stay_days} days</div>` : ''}` : ''}
+        font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">${label}</span>` : ''}
+      <div style="color:#94A3B8;font-size:0.71rem;margin-top:5px">${days}</div>
+      ${rule ? `<div style="color:${rule.status === 'baseline' ? '#F59E0B' : '#4A5568'};font-size:0.63rem;margin-top:5px">${ruleTrustLabel(rule)}</div>` : ''}
       <div style="color:#4A5568;font-size:0.63rem;margin-top:7px">Click for options</div>
     </div>`
 }

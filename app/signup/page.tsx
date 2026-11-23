@@ -4,14 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-
-const PASSPORT_OPTIONS = [
-  { code: 'US', label: 'United States' },
-  { code: 'UK', label: 'United Kingdom' },
-  { code: 'CA', label: 'Canada' },
-  { code: 'AU', label: 'Australia' },
-  { code: 'NZ', label: 'New Zealand' },
-]
+import { PASSPORT_OPTIONS } from '@/lib/visa-rules'
 
 export default function SignupPage() {
   const router = useRouter()

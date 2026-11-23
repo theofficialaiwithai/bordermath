@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import type { DbSegment } from '@/store/trip-store'
 import { SCHENGEN_CODES, countSchengenDays, findFirstViolation } from '@/lib/schengen'
-import { getVisaRule, SUPPORTED_PASSPORTS } from '@/lib/visa-rules'
+import { getVisaRule, isPassportSupported, ruleTrustLabel, VISA_LABELS, VISA_SHORT_LABELS, VISA_COLORS, type VisaRule } from '@/lib/visa-rules'
 import { COUNTRIES } from '@/lib/countries'
 
 // ---------------------------------------------------------------------------
@@ -146,14 +146,30 @@ function ComplianceRow({
   )
 }
 
+function InfoRow({ name, rule, used }: { name: string; rule: VisaRule; used: number }) {
+  const color = VISA_COLORS[rule.type]
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[#CBD5E1] text-xs font-medium">{name}</span>
+        <span className="text-white text-xs font-mono font-semibold tabular-nums">{used}d</span>
+      </div>
+      <p className="text-[10px]" style={{ color }}>{VISA_LABELS[rule.type]}</p>
+      <p className="text-[#4A5568] text-[10px] mt-0.5">
+        {rule.max_stay_days === null ? 'Stay limit unknown — check official source. ' : ''}
+        {ruleTrustLabel(rule)}
+      </p>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
 export function VisaCompliancePanel({ segments, passportCountry, stacked }: Props) {
-  const passport = (SUPPORTED_PASSPORTS as string[]).includes(passportCountry)
-    ? passportCountry
-    : 'US'
+  const passport = passportCountry
+  const passportKnown = isPassportSupported(passport)
 
   // ── Schengen ──────────────────────────────────────────────────────────────
   const hasSchengen = useMemo(
@@ -164,16 +180,18 @@ export function VisaCompliancePanel({ segments, passportCountry, stacked }: Prop
   const schengenViolation = useMemo(() => findFirstViolation(segments), [segments])
 
   // ── Non-Schengen countries ────────────────────────────────────────────────
-  const nonSchengenRows = useMemo(() => {
+  const { nonSchengenRows, missingRules } = useMemo(() => {
     const seen = new Set<string>()
+    const missingRules: string[] = []
     const rows: {
       code: string
       name: string
       used: number
-      max: number
+      max: number | null
       pct: number
       violationDate: string | null
       visaNote: string
+      rule: VisaRule
     }[] = []
 
     segments.forEach((s) => {
@@ -181,21 +199,14 @@ export function VisaCompliancePanel({ segments, passportCountry, stacked }: Prop
       seen.add(s.country_code)
 
       const rule = getVisaRule(passport, s.country_code)
-      if (!rule) return  // no data → skip
+      if (!rule) { missingRules.push(s.country_code); return }
 
       const used = daysInCountry(segments, s.country_code)
       const max  = rule.max_stay_days
-      const pct  = Math.min(100, Math.round((used / Math.max(1, max)) * 100))
-      const violationDate = used > max
+      const pct  = max !== null ? Math.min(100, Math.round((used / Math.max(1, max)) * 100)) : 0
+      const violationDate = max !== null && used > max
         ? findCountryViolation(segments, s.country_code, max)
         : null
-
-      const VISA_LABELS: Record<string, string> = {
-        visa_free:       'Visa-free',
-        visa_on_arrival: 'On arrival',
-        e_visa:          'eVisa',
-        visa_required:   'Visa req.',
-      }
 
       rows.push({
         code: s.country_code,
@@ -204,11 +215,30 @@ export function VisaCompliancePanel({ segments, passportCountry, stacked }: Prop
         max,
         pct,
         violationDate,
-        visaNote: VISA_LABELS[rule.type] ?? rule.type,
+        visaNote: VISA_SHORT_LABELS[rule.type],
+        rule,
       })
     })
 
-    return rows
+    return { nonSchengenRows: rows, missingRules }
+  }, [segments, passport])
+
+  // ── Entry permission needed before travel ─────────────────────────────────
+  const entryNotices = useMemo(() => {
+    const seen = new Set<string>()
+    const out: { name: string; label: string; color: string }[] = []
+    segments.forEach((s) => {
+      if (seen.has(s.country_code)) return
+      seen.add(s.country_code)
+      const rule = getVisaRule(passport, s.country_code)
+      if (!rule || rule.type === 'visa_free' || rule.type === 'visa_on_arrival') return
+      out.push({
+        name: COUNTRIES.find((c) => c.code === s.country_code)?.name ?? s.country_code,
+        label: VISA_LABELS[rule.type],
+        color: VISA_COLORS[rule.type],
+      })
+    })
+    return out
   }, [segments, passport])
 
   // ── Overall compliance ────────────────────────────────────────────────────
@@ -223,6 +253,7 @@ export function VisaCompliancePanel({ segments, passportCountry, stacked }: Prop
   })
 
   const hasAny = hasSchengen || nonSchengenRows.length > 0
+  const noData = !passportKnown || missingRules.length > 0
 
   // ── Outer container classes ───────────────────────────────────────────────
   const outerCls = stacked
@@ -255,15 +286,19 @@ export function VisaCompliancePanel({ segments, passportCountry, stacked }: Prop
           )}
 
           {/* Per-country rows */}
-          {nonSchengenRows.map((r) => (
-            <ComplianceRow
-              key={r.code}
-              label={r.name}
-              used={r.used}
-              max={r.max}
-              note={r.visaNote}
-            />
-          ))}
+          {nonSchengenRows.map((r) =>
+            r.max !== null ? (
+              <ComplianceRow
+                key={r.code}
+                label={r.name}
+                used={r.used}
+                max={r.max}
+                note={r.visaNote}
+              />
+            ) : (
+              <InfoRow key={r.code} name={r.name} rule={r.rule} used={r.used} />
+            )
+          )}
         </div>
       )}
 
@@ -283,8 +318,33 @@ export function VisaCompliancePanel({ segments, passportCountry, stacked }: Prop
         </div>
       )}
 
+      {/* Entry permission needed */}
+      {entryNotices.length > 0 && (
+        <div className="mt-4 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/25 px-3 py-2.5 space-y-1">
+          <p className="text-[#F59E0B] text-xs font-semibold">Apply before you travel</p>
+          {entryNotices.map((n) => (
+            <p key={n.name} className="text-xs leading-snug" style={{ color: n.color }}>
+              {n.name}: {n.label}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* Missing data */}
+      {noData && segments.length > 0 && (
+        <div className="mt-4 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/25 px-3 py-2.5">
+          <p className="text-[#F59E0B] text-xs leading-snug">
+            {!passportKnown
+              ? 'We have no visa data for your passport yet, so only Schengen is checked.'
+              : `No visa rule on file for ${missingRules
+                  .map((c) => COUNTRIES.find((x) => x.code === c)?.name ?? c)
+                  .join(', ')}. Check official sources.`}
+          </p>
+        </div>
+      )}
+
       {/* All-clear */}
-      {violations.length === 0 && hasAny && (
+      {violations.length === 0 && hasAny && !noData && entryNotices.length === 0 && (
         <div className="mt-4 rounded-lg bg-[#22C55E]/10 border border-[#22C55E]/20 px-3 py-2">
           <p className="text-[#22C55E] text-xs font-medium">✓ All rules compliant</p>
         </div>
